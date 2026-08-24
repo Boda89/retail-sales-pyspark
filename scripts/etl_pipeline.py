@@ -34,9 +34,21 @@ def load_data(spark):
 
 
 def join_data(transactions, products, stores):
+    required_columns = {
+        "transactions": (transactions, ["product_id", "store_id"]),
+        "products": (products, ["product_id"]),
+        "stores": (stores, ["store_id"]),
+    }
+
+    for df_name, (df, cols) in required_columns.items():
+        missing = [c for c in cols if c not in df.columns]
+        if missing:
+            raise ValueError(f"'{df_name}' DataFrame is missing required column(s): {missing}")
+
     joined_df = transactions \
         .join(broadcast(products), on="product_id", how="inner") \
         .join(broadcast(stores), on="store_id", how="inner")
+
     return joined_df
 
 
