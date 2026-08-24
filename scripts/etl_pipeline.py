@@ -2,7 +2,7 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, broadcast, dense_rank
 from pyspark.sql.functions import sum as spark_sum
 from pyspark.sql.window import Window
-
+import os
 
 def create_spark_session():
     spark = SparkSession.builder \
@@ -13,16 +13,42 @@ def create_spark_session():
 
 
 def load_data(spark):
-    transactions = spark.read.csv("data/raw/transactions.csv", header=True, inferSchema=True)
-    products = spark.read.csv("data/raw/products.csv", header=True, inferSchema=True)
-    stores = spark.read.csv("data/raw/stores.csv", header=True, inferSchema=True)
+    required_files = {
+        "transactions": "data/raw/transactions.csv",
+        "products": "data/raw/products.csv",
+        "stores": "data/raw/stores.csv",
+    }
+
+    for name, path in required_files.items():
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Required input file missing: '{path}' (expected for '{name}')")
+
+    try:
+        transactions = spark.read.csv(required_files["transactions"], header=True, inferSchema=True)
+        products = spark.read.csv(required_files["products"], header=True, inferSchema=True)
+        stores = spark.read.csv(required_files["stores"], header=True, inferSchema=True)
+    except Exception as e:
+        raise RuntimeError(f"Failed to load input data: {e}") from e
+
     return transactions, products, stores
 
 
 def join_data(transactions, products, stores):
+    required_columns = {
+        "transactions": (transactions, ["product_id", "store_id"]),
+        "products": (products, ["product_id"]),
+        "stores": (stores, ["store_id"]),
+    }
+
+    for df_name, (df, cols) in required_columns.items():
+        missing = [c for c in cols if c not in df.columns]
+        if missing:
+            raise ValueError(f"'{df_name}' DataFrame is missing required column(s): {missing}")
+
     joined_df = transactions \
         .join(broadcast(products), on="product_id", how="inner") \
         .join(broadcast(stores), on="store_id", how="inner")
+
     return joined_df
 
 
